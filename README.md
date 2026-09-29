@@ -2,6 +2,10 @@
 
 A zero-build-step Three.js prototype for an interactive hemispheric sky view.
 
+The CSS and JavaScript references in `index.html` include a small version query
+to prevent mobile browsers from combining a new HTML file with an older cached
+script. Bump this value whenever a deployed update changes the UI/API contract.
+
 ## What it already does
 
 - inverse-projects the supplied circular ZEA hemisphere onto the inside of a sphere;
