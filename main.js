@@ -30,15 +30,90 @@ app.appendChild(renderer.domElement);
 
 // ------------------------------------------------------------
 // Inside-out sky sphere
-// Replace assets/sky.jpg with your own 2:1 equirectangular texture.
+//
+// sky_0.2-2.3.png is a Zenithal Equal Area (ZEA) image of one
+// hemisphere, rather than an equirectangular image.  The shader below
+// converts every direction on the sphere back to a point in the ZEA disc.
 // ------------------------------------------------------------
-const texture = new THREE.TextureLoader().load("./assets/sky.jpg");
+const texture = new THREE.TextureLoader().load("./assets/sky_0.2-2.3.png");
 texture.colorSpace = THREE.SRGBColorSpace;
+texture.minFilter = THREE.LinearMipmapLinearFilter;
+texture.magFilter = THREE.LinearFilter;
+
+// Projection calibration. The supplied PNG's disc is centred in the image
+// and has a small transparent margin. ROTATION turns the source image about
+// its centre; set FLIP_X/Y to true if coordinate calibration shows that an
+// axis in the exported PNG is reversed.
+const ZEA_DISC_CENTER = new THREE.Vector2(0.5, 0.5);
+const ZEA_DISC_RADIUS = 0.452;
+const ZEA_ROTATION = THREE.MathUtils.degToRad(0);
+const ZEA_FLIP_X = false;
+const ZEA_FLIP_Y = false;
 
 const geometry = new THREE.SphereGeometry(20, 96, 64);
-const material = new THREE.MeshBasicMaterial({
-  map: texture,
-  side: THREE.BackSide
+const material = new THREE.ShaderMaterial({
+  side: THREE.BackSide,
+  uniforms: {
+    skyTexture: { value: texture },
+    discCenter: { value: ZEA_DISC_CENTER },
+    discRadius: { value: ZEA_DISC_RADIUS },
+    discRotation: { value: ZEA_ROTATION },
+    discFlip: {
+      value: new THREE.Vector2(ZEA_FLIP_X ? -1 : 1, ZEA_FLIP_Y ? -1 : 1)
+    }
+  },
+  vertexShader: `
+    varying vec3 vSkyDirection;
+
+    void main() {
+      vSkyDirection = normalize(position);
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform sampler2D skyTexture;
+    uniform vec2 discCenter;
+    uniform float discRadius;
+    uniform float discRotation;
+    uniform vec2 discFlip;
+
+    varying vec3 vSkyDirection;
+
+    void main() {
+      vec3 direction = normalize(vSkyDirection);
+
+      // The ZEA disc is centred on the initial view direction (0, 0, -1).
+      // A hemisphere ends 90 degrees away from that centre.
+      float cosTheta = clamp(-direction.z, -1.0, 1.0);
+      if (cosTheta < 0.0) {
+        discard;
+      }
+
+      float sinTheta = length(direction.xy);
+      vec2 radialDirection = sinTheta > 0.000001
+        ? direction.xy / sinTheta
+        : vec2(0.0);
+
+      // Lambert azimuthal equal-area / ZEA radial law, normalized so that
+      // theta = 90 degrees maps exactly to the edge of the hemisphere disc.
+      float normalizedRadius = sqrt(max(0.0, 1.0 - cosTheta));
+      vec2 discPosition = radialDirection * normalizedRadius * discFlip;
+
+      float c = cos(discRotation);
+      float s = sin(discRotation);
+      discPosition = mat2(c, -s, s, c) * discPosition;
+
+      vec2 uv = discCenter + discRadius * discPosition;
+      vec4 color = texture2D(skyTexture, uv);
+
+      // The PNG is transparent outside its circular footprint. Alpha-aware
+      // compositing also prevents dark margin pixels from forming a rim.
+      if (color.a < 0.01) {
+        discard;
+      }
+      gl_FragColor = vec4(color.rgb, 1.0);
+    }
+  `
 });
 const sphere = new THREE.Mesh(geometry, material);
 scene.add(sphere);

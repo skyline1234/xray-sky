@@ -1,10 +1,10 @@
-# Minimal 360° X-ray Sky
+# Minimal interactive X-ray Sky
 
-A zero-build-step Three.js prototype for an interactive all-sky view.
+A zero-build-step Three.js prototype for an interactive hemispheric sky view.
 
 ## What it already does
 
-- renders a 2:1 equirectangular texture on the inside of a sphere;
+- inverse-projects the supplied circular ZEA hemisphere onto the inside of a sphere;
 - mouse drag;
 - touch drag;
 - mobile device-orientation control;
@@ -18,18 +18,26 @@ A zero-build-step Three.js prototype for an interactive all-sky view.
 index.html
 style.css
 main.js
-assets/sky.jpg
+assets/sky_0.2-2.3.png
 ```
 
-`assets/sky.jpg` is only a placeholder.
+`assets/sky_0.2-2.3.png` is a circular Zenithal Equal Area (ZEA) projection
+covering one hemisphere. The other hemisphere is intentionally left black.
 
-Replace it with your own **2:1 Galactic equirectangular / CAR** image, e.g.
+The ZEA inverse projection is performed in `main.js`. Its calibration constants
+are grouped near the texture setup:
 
 ```text
-4096 x 2048
+ZEA_DISC_CENTER
+ZEA_DISC_RADIUS
+ZEA_ROTATION
+ZEA_FLIP_X
+ZEA_FLIP_Y
 ```
 
-Do not use a circular ZEA PNG as the sphere texture.
+Use the rotation and flip settings to match the source image's WCS orientation.
+The PNG alone does not retain FITS/WCS metadata, so known sky features or the
+original FITS header are needed for definitive Galactic-coordinate calibration.
 
 ## Run locally
 
@@ -84,9 +92,9 @@ If permission is denied, drag still works.
 
 ## Important next step
 
-Before polishing the UI, replace the placeholder image with a correctly oriented Galactic all-sky texture and verify:
+Before publishing, compare the rendered hemisphere with the original FITS/WCS
+data and verify:
 
 - Galactic longitude direction;
 - north/south;
-- 0°/360° seam;
 - image is not mirrored.
