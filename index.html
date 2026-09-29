@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#050812" />
+  <title>X-ray Sky</title>
+  <link rel="stylesheet" href="./style.css" />
+
+  <!-- No build step: Three.js is loaded directly from a CDN. -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="app"></div>
+
+  <div id="hud">
+    <div class="title">THE X-RAY SKY</div>
+    <div class="hint" id="hint">Drag to look around</div>
+  </div>
+
+  <div id="controls">
+    <button id="motionBtn">Enable Motion</button>
+    <button id="resetBtn">Reset View</button>
+  </div>
+
+  <div id="status">Manual view</div>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
