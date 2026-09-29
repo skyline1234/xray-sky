@@ -337,10 +337,11 @@ renderer.domElement.addEventListener("pointercancel", endPointer);
 // ------------------------------------------------------------
 // Gravity-aligned device orientation
 //
-// The phone's gravity-based tilt and roll are preserved so Galactic latitude
-// b=0 stays parallel to the physical horizon. On activation, only the heading
-// around the vertical axis is recentered; longitude therefore remains a
-// relative reference rather than an absolute compass direction.
+// The phone's raw gravity-based attitude is preserved so Galactic latitude
+// b=0 stays parallel to the physical horizon. Nothing is recentered when
+// motion starts: the initial view therefore depends on how the phone is held.
+// Longitude uses the browser's heading reference and is not guaranteed to be
+// an absolute compass direction.
 //
 // The sensor quaternion uses the same coordinate conversion historically used
 // by Three.js DeviceOrientationControls:
@@ -350,15 +351,12 @@ renderer.domElement.addEventListener("pointercancel", endPointer);
 // ------------------------------------------------------------
 let motionEnabled = false;
 let latestOrientation = null;
-let headingCalibrated = false;
+let receivedOrientation = false;
 
 const zee = new THREE.Vector3(0, 0, 1);
-const worldUp = new THREE.Vector3(0, 1, 0);
-const deviceForward = new THREE.Vector3();
 const euler = new THREE.Euler();
 const q0 = new THREE.Quaternion();
 const q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5));
-const qHeadingOffset = new THREE.Quaternion();
 
 function getScreenOrientationRad() {
   if (screen.orientation && typeof screen.orientation.angle === "number") {
@@ -386,35 +384,14 @@ function deviceEventToQuaternion(event) {
   return q;
 }
 
-function calibrateHeading(event) {
-  const deviceQ = deviceEventToQuaternion(event);
-  deviceForward.set(0, 0, -1).applyQuaternion(deviceQ);
-
-  // Project the viewing direction onto the physical horizon. A phone pointed
-  // almost straight up/down has no stable heading, so retain the last heading
-  // (or identity on first use) until a horizontal component is available.
-  const horizontalLength = Math.hypot(deviceForward.x, deviceForward.z);
-  if (horizontalLength < 0.01) {
-    if (!headingCalibrated) qHeadingOffset.identity();
-    return;
-  }
-
-  const heading = Math.atan2(-deviceForward.x, -deviceForward.z);
-  qHeadingOffset.setFromAxisAngle(worldUp, -heading);
-  headingCalibrated = true;
-}
-
 function onDeviceOrientation(event) {
   // Some browsers fire the event but provide null values.
   if (event.alpha == null && event.beta == null && event.gamma == null) return;
 
   latestOrientation = event;
-
-  if (!headingCalibrated) {
-    calibrateHeading(event);
-    statusEl.textContent = headingCalibrated
-      ? "Motion enabled · horizon aligned"
-      : "Tilt phone toward the horizon to align";
+  if (!receivedOrientation) {
+    receivedOrientation = true;
+    statusEl.textContent = "Motion enabled · horizon aligned";
   }
 }
 
@@ -441,9 +418,8 @@ async function enableExploreMode() {
     }
 
     motionEnabled = true;
-    headingCalibrated = false;
-    qHeadingOffset.identity();
     latestOrientation = null;
+    receivedOrientation = false;
     listenForOrientation();
     exploreBtn.setAttribute("aria-pressed", "true");
     exploreBtn.textContent = "Motion Enabled";
@@ -465,10 +441,9 @@ resetBtn.addEventListener("click", () => {
   yaw = 0;
   pitch = 0;
 
-  // Recenter longitude only; keep the gravity-derived horizon alignment.
-  if (latestOrientation) calibrateHeading(latestOrientation);
-
-  statusEl.textContent = motionEnabled ? "View recentered" : "Manual view reset";
+  statusEl.textContent = motionEnabled
+    ? "Manual offset reset · sensor direction preserved"
+    : "Manual view reset";
 });
 
 // ------------------------------------------------------------
@@ -481,12 +456,11 @@ function updateCameraQuaternion() {
   const manualEuler = new THREE.Euler(pitch, yaw, 0, "YXZ");
   qManual.setFromEuler(manualEuler);
 
-  if (motionEnabled && latestOrientation && headingCalibrated) {
+  if (motionEnabled && latestOrientation) {
     const currentQ = deviceEventToQuaternion(latestOrientation);
 
-    // Preserve physical tilt/roll, remove only the initial heading, and then
-    // apply the user's optional drag adjustment in camera-local coordinates.
-    camera.quaternion.copy(qHeadingOffset).multiply(currentQ).multiply(qManual);
+    // Use the raw sensor attitude; only the optional drag offset is relative.
+    camera.quaternion.copy(currentQ).multiply(qManual);
   } else {
     camera.quaternion.copy(qManual);
   }

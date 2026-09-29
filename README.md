@@ -150,10 +150,11 @@ On iPhone/Safari:
 
 If permission is denied, drag still works.
 
-Motion mode preserves the phone's gravity-derived tilt and roll, keeping the
-Galactic plane `b=0` parallel to the physical horizon. Activation and reset
-recenter only the horizontal heading. Galactic longitude is still relative:
-without compass, location, and time it does not claim to match the real sky.
+Motion mode uses the phone's raw gravity-derived attitude, keeping the Galactic
+plane `b=0` parallel to the physical horizon. Activation does not recenter the
+current pose, and reset clears only the manual drag offset. Galactic longitude
+uses the browser's heading reference; without a reliable compass, location,
+and time it does not claim to match the real sky.
 
 The camera is at the exact centre of the celestial sphere, so doubling the
 sphere radius does not change its apparent size. `CAMERA_FOV` in `main.js`
