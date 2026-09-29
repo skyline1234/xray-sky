@@ -41,6 +41,14 @@ canvas {
   opacity: .75;
 }
 
+.coordinates {
+  margin-top: 8px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .025em;
+  opacity: .88;
+}
+
 #controls {
   position: fixed;
   left: 50%;

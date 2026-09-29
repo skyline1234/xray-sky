@@ -7,6 +7,7 @@ A zero-build-step Three.js prototype for an interactive hemispheric sky view.
 - inverse-projects the supplied circular ZEA hemisphere onto the inside of a sphere;
 - switches among any number of same-geometry ZEA images;
 - optionally mirrors the source hemisphere across its boundary to fill the sky;
+- shows the current Galactic longitude and latitude from the supplied WCS;
 - mouse drag;
 - touch drag;
 - mobile device-orientation control;
@@ -57,6 +58,27 @@ The previous/next controls and image counter derive from this list. All source
 images must have the same ZEA disc centre, radius, orientation, and dimensions.
 The **Mirror Full Sky** control reflects the supplied hemisphere into the
 uncovered half; this is a visual mirror, not additional measured sky data.
+
+## Galactic WCS calibration
+
+The current map is calibrated from its FITS header as Galactic ZEA with:
+
+```text
+CRVAL  = (270 deg, 0 deg)
+CRPIX  = (1080, 1080)
+CDELT  = (-0.0833333 deg, +0.0833333 deg)
+```
+
+The initial view therefore points to `l = 270 deg, b = 0 deg`; screen/image
+right is decreasing Galactic longitude and image up is increasing Galactic
+latitude. The ZEA hemisphere radius is derived from the WCS as 972.34 pixels.
+The 1-based FITS reference pixel is also converted to the corresponding PNG
+pixel centre, including its half-pixel texture-coordinate offset.
+
+This assumes the PNG was exported using the normal astronomical lower-origin
+orientation. PNG files do not retain FITS WCS metadata. If the export pipeline
+flipped the raster vertically or horizontally, compare a known source with the
+original FITS display and change `ZEA_FLIP_X` or `ZEA_FLIP_Y` accordingly.
 
 ## Run locally
 

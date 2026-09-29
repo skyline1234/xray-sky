@@ -11,6 +11,7 @@ const motionBtn = document.getElementById("motionBtn");
 const resetBtn = document.getElementById("resetBtn");
 const statusEl = document.getElementById("status");
 const hintEl = document.getElementById("hint");
+const coordinatesEl = document.getElementById("coordinates");
 
 // ------------------------------------------------------------
 // Scene
@@ -62,12 +63,17 @@ function configureTexture(texture) {
 
 const texture = configureTexture(textureLoader.load(SKY_MAPS[0].file));
 
-// Projection calibration. The supplied PNG's disc is centred in the image
-// and has a small transparent margin. ROTATION turns the source image about
-// its centre; set FLIP_X/Y to true if coordinate calibration shows that an
-// axis in the exported PNG is reversed.
-const ZEA_DISC_CENTER = new THREE.Vector2(0.5, 0.5);
-const ZEA_DISC_RADIUS = 0.452;
+// WCS calibration from the supplied FITS header:
+//   CTYPE  = GLON-ZEA / GLAT-ZEA
+//   CRVAL  = (l, b) = (270 deg, 0 deg)
+//   CRPIX  = (1080, 1080)
+//   CDELT  = (-1/12 deg, +1/12 deg) per pixel
+// A 90-degree ZEA radius is sqrt(2) radians on the projection plane. In FITS
+// angular units that is sqrt(2) * 180/pi = 81.028... degrees, or 972.34 px.
+// FITS pixels are 1-based; a FITS reference pixel at 1080 maps to the centre
+// of zero-based raster pixel 1079, hence the half-pixel texture offset.
+const ZEA_DISC_CENTER = new THREE.Vector2(1079.5 / 2160, 1079.5 / 2160);
+const ZEA_DISC_RADIUS = 972.341 / 2160;
 const ZEA_ROTATION = THREE.MathUtils.degToRad(0);
 const ZEA_FLIP_X = false;
 const ZEA_FLIP_Y = false;
@@ -383,11 +389,39 @@ function updateCameraQuaternion() {
 }
 
 // ------------------------------------------------------------
+// Galactic-coordinate readout
+//
+// World direction mapping fixed by the FITS WCS:
+//   initial view -Z = (l, b) = (270 deg, 0 deg)
+//   image right +X = decreasing Galactic longitude
+//   image up    +Y = increasing Galactic latitude
+// Therefore Galactic Cartesian (x, y, z) = (-world.x, world.z, world.y).
+// ------------------------------------------------------------
+const viewDirection = new THREE.Vector3();
+
+function updateGalacticCoordinates() {
+  camera.getWorldDirection(viewDirection);
+
+  const galacticX = -viewDirection.x;
+  const galacticY = viewDirection.z;
+  const galacticZ = THREE.MathUtils.clamp(viewDirection.y, -1, 1);
+
+  let longitude = THREE.MathUtils.radToDeg(Math.atan2(galacticY, galacticX));
+  if (longitude < 0) longitude += 360;
+  const latitude = THREE.MathUtils.radToDeg(Math.asin(galacticZ));
+  const latitudeSign = latitude >= 0 ? "+" : "−";
+
+  coordinatesEl.textContent =
+    `l = ${longitude.toFixed(1)}° · b = ${latitudeSign}${Math.abs(latitude).toFixed(1)}°`;
+}
+
+// ------------------------------------------------------------
 // Render loop
 // ------------------------------------------------------------
 function animate() {
   requestAnimationFrame(animate);
   updateCameraQuaternion();
+  updateGalacticCoordinates();
   renderer.render(scene, camera);
 }
 animate();
