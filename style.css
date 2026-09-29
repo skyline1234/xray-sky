@@ -113,7 +113,9 @@ button:disabled {
   font-size: 11px;
 }
 
-#mirrorBtn[aria-pressed="true"] {
+#mirrorBtn[aria-pressed="true"],
+#exploreBtn[aria-pressed="true"],
+#realSkyBtn[aria-pressed="true"] {
   border-color: rgba(135, 208, 255, .9);
   background: rgba(39, 107, 153, .8);
 }

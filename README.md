@@ -11,6 +11,7 @@ A zero-build-step Three.js prototype for an interactive hemispheric sky view.
 - mouse drag;
 - touch drag;
 - mobile device-orientation control;
+- separate relative Explore and absolute Real Sky orientation modes;
 - iOS motion permission button;
 - reset/recenter;
 - static files only, suitable for GitHub Pages.
@@ -125,11 +126,26 @@ Open that URL on your phone.
 On iPhone/Safari:
 
 1. open the HTTPS page;
-2. tap **Enable Motion**;
+2. tap **Explore** for relative motion, or **Real Sky** for physical alignment;
 3. approve Motion & Orientation access;
-4. move the phone.
+4. for **Real Sky**, also approve Location and compass/magnetometer access;
+5. move or point the phone.
 
 If permission is denied, drag still works.
+
+## Orientation modes
+
+**Explore** treats the phone pose at activation as a neutral pose. It is the
+most compatible mode and does not claim to match the physical sky.
+
+**Real Sky** combines absolute orientation/magnetometer data, current UTC, and
+the observer's geographic position. It transforms the local horizon frame to
+J2000 equatorial coordinates and then to Galactic coordinates. It requires
+HTTPS and browser permission for both device orientation and location.
+
+Compass support varies by browser and indoor magnetic interference can cause
+errors of several degrees or more. Real Sky is intended for outreach rather
+than precision pointing. If no absolute heading is delivered, use Explore.
 
 ## Important next step
 

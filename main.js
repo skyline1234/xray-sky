@@ -7,7 +7,8 @@ const nextImageBtn = document.getElementById("nextImageBtn");
 const imageNameEl = document.getElementById("imageName");
 const imageCountEl = document.getElementById("imageCount");
 const mirrorBtn = document.getElementById("mirrorBtn");
-const motionBtn = document.getElementById("motionBtn");
+const exploreBtn = document.getElementById("exploreBtn");
+const realSkyBtn = document.getElementById("realSkyBtn");
 const resetBtn = document.getElementById("resetBtn");
 const statusEl = document.getElementById("status");
 const hintEl = document.getElementById("hint");
@@ -259,19 +260,23 @@ renderer.domElement.addEventListener("pointerup", endPointer);
 renderer.domElement.addEventListener("pointercancel", endPointer);
 
 // ------------------------------------------------------------
-// Device orientation
+// Device orientation modes
 //
-// This uses the same basic coordinate conversion historically used
+// Explore mode treats the initial phone pose as neutral. Real Sky mode uses
+// absolute device orientation, observer location, and UTC to align the fixed
+// Galactic sphere with the physical sky.
+//
+// The sensor quaternion uses the same coordinate conversion historically used
 // by Three.js DeviceOrientationControls:
 // alpha = device rotation around z
 // beta  = front/back tilt
 // gamma = left/right tilt
-//
-// The initial phone pose is treated as the neutral pose.
 // ------------------------------------------------------------
-let motionEnabled = false;
+let orientationMode = "manual";
 let latestOrientation = null;
 let referenceDeviceQ = null;
+let observerLocation = null;
+let hasAbsoluteOrientation = false;
 
 const zee = new THREE.Vector3(0, 0, 1);
 const euler = new THREE.Euler();
@@ -289,7 +294,12 @@ function getScreenOrientationRad() {
 }
 
 function deviceEventToQuaternion(event) {
-  const alpha = event.alpha != null ? THREE.MathUtils.degToRad(event.alpha) : 0;
+  // iOS exposes its compass heading separately. Other browsers generally put
+  // the absolute Earth-referenced heading in alpha.
+  const alphaDegrees = Number.isFinite(event.webkitCompassHeading)
+    ? 360 - event.webkitCompassHeading
+    : event.alpha;
+  const alpha = alphaDegrees != null ? THREE.MathUtils.degToRad(alphaDegrees) : 0;
   const beta  = event.beta  != null ? THREE.MathUtils.degToRad(event.beta)  : 0;
   const gamma = event.gamma != null ? THREE.MathUtils.degToRad(event.gamma) : 0;
   const orient = getScreenOrientationRad();
@@ -308,34 +318,60 @@ function onDeviceOrientation(event) {
   // Some browsers fire the event but provide null values.
   if (event.alpha == null && event.beta == null && event.gamma == null) return;
 
-  latestOrientation = event;
+  const isAbsolute =
+    event.type === "deviceorientationabsolute" ||
+    event.absolute === true ||
+    Number.isFinite(event.webkitCompassHeading);
+  const firstAbsoluteReading = isAbsolute && !hasAbsoluteOrientation;
 
-  if (!referenceDeviceQ) {
+  if (orientationMode === "absolute" && !isAbsolute) return;
+
+  latestOrientation = event;
+  hasAbsoluteOrientation = hasAbsoluteOrientation || isAbsolute;
+
+  if (orientationMode === "relative" && !referenceDeviceQ) {
     referenceDeviceQ = deviceEventToQuaternion(event);
-    statusEl.textContent = "Motion enabled";
+    statusEl.textContent = "Explore motion enabled";
+  } else if (orientationMode === "absolute" && firstAbsoluteReading) {
+    statusEl.textContent = "Real sky aligned";
   }
 }
 
-async function enableMotion() {
-  try {
-    // iOS Safari requires this call to happen from a user gesture.
-    if (
-      typeof DeviceOrientationEvent !== "undefined" &&
-      typeof DeviceOrientationEvent.requestPermission === "function"
-    ) {
-      const result = await DeviceOrientationEvent.requestPermission();
+async function requestOrientationPermission(absolute = false) {
+  if (
+    typeof DeviceOrientationEvent !== "undefined" &&
+    typeof DeviceOrientationEvent.requestPermission === "function"
+  ) {
+    // Passing true additionally requests magnetometer access where supported.
+    return DeviceOrientationEvent.requestPermission(absolute);
+  }
+  return "granted";
+}
 
-      if (result !== "granted") {
-        statusEl.textContent = "Motion denied — drag instead";
-        return;
-      }
+function listenForOrientation() {
+  window.addEventListener("deviceorientation", onDeviceOrientation, true);
+  window.addEventListener("deviceorientationabsolute", onDeviceOrientation, true);
+}
+
+function setModeButtons() {
+  exploreBtn.setAttribute("aria-pressed", String(orientationMode === "relative"));
+  realSkyBtn.setAttribute("aria-pressed", String(orientationMode === "absolute"));
+}
+
+async function enableExploreMode() {
+  try {
+    const result = await requestOrientationPermission(false);
+    if (result !== "granted") {
+      statusEl.textContent = "Motion denied — drag instead";
+      return;
     }
 
-    window.addEventListener("deviceorientation", onDeviceOrientation, true);
-    motionEnabled = true;
+    orientationMode = "relative";
     referenceDeviceQ = null;
+    latestOrientation = null;
+    listenForOrientation();
+    setModeButtons();
 
-    motionBtn.textContent = "Motion Enabled";
     hintEl.textContent = "Move your phone or drag to fine-tune";
     statusEl.textContent = "Waiting for sensor…";
   } catch (err) {
@@ -344,7 +380,58 @@ async function enableMotion() {
   }
 }
 
-motionBtn.addEventListener("click", enableMotion);
+function requestObserverLocation() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error("Geolocation is unavailable"));
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true,
+      timeout: 15000,
+      maximumAge: 300000
+    });
+  });
+}
+
+async function enableRealSkyMode() {
+  statusEl.textContent = "Requesting compass and location…";
+
+  try {
+    // Both permission prompts originate from this button gesture.
+    const [orientationPermission, position] = await Promise.all([
+      requestOrientationPermission(true),
+      requestObserverLocation()
+    ]);
+
+    if (orientationPermission !== "granted") {
+      statusEl.textContent = "Compass denied — use Explore";
+      return;
+    }
+
+    observerLocation = {
+      latitude: THREE.MathUtils.degToRad(position.coords.latitude),
+      longitude: THREE.MathUtils.degToRad(position.coords.longitude),
+      accuracy: position.coords.accuracy
+    };
+    orientationMode = "absolute";
+    latestOrientation = null;
+    hasAbsoluteOrientation = false;
+    listenForOrientation();
+    setModeButtons();
+
+    hintEl.textContent = "Point your phone at the sky or drag to fine-tune";
+    statusEl.textContent = `Waiting for compass · GPS ±${Math.round(position.coords.accuracy)} m`;
+  } catch (err) {
+    console.error(err);
+    statusEl.textContent = "Real sky unavailable — use Explore";
+  }
+}
+
+exploreBtn.addEventListener("click", enableExploreMode);
+realSkyBtn.addEventListener("click", enableRealSkyMode);
+setModeButtons();
 
 // ------------------------------------------------------------
 // Reset
@@ -358,7 +445,13 @@ resetBtn.addEventListener("click", () => {
     referenceDeviceQ = deviceEventToQuaternion(latestOrientation);
   }
 
-  statusEl.textContent = motionEnabled ? "View recentered" : "Manual view reset";
+  if (orientationMode === "relative") {
+    statusEl.textContent = "Explore view recentered";
+  } else if (orientationMode === "absolute") {
+    statusEl.textContent = "Real-sky fine adjustment reset";
+  } else {
+    statusEl.textContent = "Manual view reset";
+  }
 });
 
 // ------------------------------------------------------------
@@ -367,13 +460,82 @@ resetBtn.addEventListener("click", () => {
 const qManual = new THREE.Quaternion();
 const qRelativeDevice = new THREE.Quaternion();
 const qReferenceInverse = new THREE.Quaternion();
+const qHorizonToSky = new THREE.Quaternion();
+const horizonToSkyMatrix = new THREE.Matrix4();
+let lastAstronomyUpdate = 0;
+
+// IAU J2000 equatorial-to-Galactic rotation matrix.
+const EQUATORIAL_TO_GALACTIC = [
+  [-0.0548755604, -0.8734370902, -0.4838350155],
+  [ 0.4941094279, -0.4448296300,  0.7469822445],
+  [-0.8676661490, -0.1980763734,  0.4559837762]
+];
+
+function multiplyMatrix3(a, b) {
+  return a.map((row) => b[0].map((_, column) =>
+    row.reduce((sum, value, index) => sum + value * b[index][column], 0)
+  ));
+}
+
+function updateHorizonToSkyQuaternion(now = new Date()) {
+  if (!observerLocation) return;
+
+  const julianDate = now.getTime() / 86400000 + 2440587.5;
+  const daysSinceJ2000 = julianDate - 2451545.0;
+  const gmstDegrees = 280.46061837 + 360.98564736629 * daysSinceJ2000;
+  const localSiderealTime =
+    THREE.MathUtils.degToRad(((gmstDegrees % 360) + 360) % 360) +
+    observerLocation.longitude;
+
+  const sinL = Math.sin(localSiderealTime);
+  const cosL = Math.cos(localSiderealTime);
+  const sinPhi = Math.sin(observerLocation.latitude);
+  const cosPhi = Math.cos(observerLocation.latitude);
+
+  // Sensor-world coordinates map to local ENU as E=+X, N=-Z, U=+Y.
+  // Columns below are the equatorial vectors for sensor +X, +Y, +Z.
+  const sensorToEquatorial = [
+    [-sinL,  cosPhi * cosL,  sinPhi * cosL],
+    [ cosL,  cosPhi * sinL,  sinPhi * sinL],
+    [ 0,     sinPhi,        -cosPhi]
+  ];
+  const sensorToGalactic = multiplyMatrix3(
+    EQUATORIAL_TO_GALACTIC,
+    sensorToEquatorial
+  );
+
+  // Galactic Cartesian (gx, gy, gz) maps into the fixed sky sphere as
+  // world=(-gx, gz, gy), matching the FITS WCS/readout convention.
+  const sensorToSky = [
+    sensorToGalactic[0].map((value) => -value),
+    sensorToGalactic[2],
+    sensorToGalactic[1]
+  ];
+
+  horizonToSkyMatrix.set(
+    sensorToSky[0][0], sensorToSky[0][1], sensorToSky[0][2], 0,
+    sensorToSky[1][0], sensorToSky[1][1], sensorToSky[1][2], 0,
+    sensorToSky[2][0], sensorToSky[2][1], sensorToSky[2][2], 0,
+    0, 0, 0, 1
+  );
+  qHorizonToSky.setFromRotationMatrix(horizonToSkyMatrix);
+}
 
 function updateCameraQuaternion() {
   // Manual drag offset
   const manualEuler = new THREE.Euler(pitch, yaw, 0, "YXZ");
   qManual.setFromEuler(manualEuler);
 
-  if (motionEnabled && latestOrientation && referenceDeviceQ) {
+  if (orientationMode === "absolute" && latestOrientation && observerLocation) {
+    const now = Date.now();
+    if (now - lastAstronomyUpdate > 1000) {
+      updateHorizonToSkyQuaternion(new Date(now));
+      lastAstronomyUpdate = now;
+    }
+
+    const deviceQ = deviceEventToQuaternion(latestOrientation);
+    camera.quaternion.copy(qHorizonToSky).multiply(deviceQ).multiply(qManual);
+  } else if (orientationMode === "relative" && latestOrientation && referenceDeviceQ) {
     const currentQ = deviceEventToQuaternion(latestOrientation);
 
     // Relative rotation from initial phone pose:
