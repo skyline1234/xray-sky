@@ -15,7 +15,7 @@ script. Bump this value whenever a deployed update changes the UI/API contract.
 - mouse drag;
 - touch drag;
 - mobile device-orientation control;
-- relative phone-motion exploration;
+- gravity-aligned phone-motion exploration;
 - iOS motion permission button;
 - reset/recenter;
 - static files only, suitable for GitHub Pages.
@@ -150,8 +150,10 @@ On iPhone/Safari:
 
 If permission is denied, drag still works.
 
-Motion mode treats the phone pose at activation as a neutral pose. It controls
-the virtual sky relatively and does not claim to match the physical sky.
+Motion mode preserves the phone's gravity-derived tilt and roll, keeping the
+Galactic plane `b=0` parallel to the physical horizon. Activation and reset
+recenter only the horizontal heading. Galactic longitude is still relative:
+without compass, location, and time it does not claim to match the real sky.
 
 The camera is at the exact centre of the celestial sphere, so doubling the
 sphere radius does not change its apparent size. `CAMERA_FOV` in `main.js`
