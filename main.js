@@ -1,14 +1,10 @@
 import * as THREE from "three";
 
 const app = document.getElementById("app");
-const previousImageBtn = document.getElementById("previousImageBtn");
-const imageBtn = document.getElementById("imageBtn");
-const nextImageBtn = document.getElementById("nextImageBtn");
-const imageNameEl = document.getElementById("imageName");
-const imageCountEl = document.getElementById("imageCount");
+const skySlider = document.getElementById("skySlider");
+const blendReadout = document.getElementById("blendReadout");
 const mirrorBtn = document.getElementById("mirrorBtn");
 const exploreBtn = document.getElementById("exploreBtn");
-const realSkyBtn = document.getElementById("realSkyBtn");
 const resetBtn = document.getElementById("resetBtn");
 const statusEl = document.getElementById("status");
 const hintEl = document.getElementById("hint");
@@ -43,14 +39,14 @@ app.appendChild(renderer.domElement);
 // hemisphere, rather than an equirectangular image.  The shader below
 // converts every direction on the sphere back to a point in the ZEA disc.
 // ------------------------------------------------------------
-// Add the other four maps here after copying them into assets/. Buttons and
-// the counter update automatically. All maps must use the same ZEA geometry.
+// Slider order. All maps use the same 2160 x 2160 Galactic ZEA geometry.
 const SKY_MAPS = [
-  { name: "0.2–2.3 keV", file: "./assets/sky_0.2-2.3.png" }
-  // { name: "Map 2", file: "./assets/sky-map-2.png" },
-  // { name: "Map 3", file: "./assets/sky-map-3.png" },
-  // { name: "Map 4", file: "./assets/sky-map-4.png" },
-  // { name: "Map 5", file: "./assets/sky-map-5.png" }
+  { name: "Optical", file: "./assets/optical.png" },
+  { name: "0.2–0.25 keV · Red", file: "./assets/rate_0.2_0.25_s_red_asinh.png" },
+  { name: "0.2–2.3 keV · Green", file: "./assets/rate_0.2_2.3_s_green_asinh.png" },
+  { name: "0.5–0.6 keV · Purple", file: "./assets/rate_0.5_0.6_s_purple_asinh.png" },
+  { name: "0.6–0.7 keV · Blue", file: "./assets/rate_0.6_0.7_s_blue_asinh.png" },
+  { name: "RGB composite", file: "./assets/RGB_0.20.25_0.2_2.3_0.60.7.png" }
 ];
 
 const textureLoader = new THREE.TextureLoader();
@@ -83,7 +79,9 @@ const geometry = new THREE.SphereGeometry(20, 96, 64);
 const material = new THREE.ShaderMaterial({
   side: THREE.BackSide,
   uniforms: {
-    skyTexture: { value: texture },
+    skyTextureA: { value: texture },
+    skyTextureB: { value: texture },
+    textureBlend: { value: 0 },
     discCenter: { value: ZEA_DISC_CENTER },
     discRadius: { value: ZEA_DISC_RADIUS },
     discRotation: { value: ZEA_ROTATION },
@@ -101,7 +99,9 @@ const material = new THREE.ShaderMaterial({
     }
   `,
   fragmentShader: `
-    uniform sampler2D skyTexture;
+    uniform sampler2D skyTextureA;
+    uniform sampler2D skyTextureB;
+    uniform float textureBlend;
     uniform vec2 discCenter;
     uniform float discRadius;
     uniform float discRotation;
@@ -140,7 +140,9 @@ const material = new THREE.ShaderMaterial({
       discPosition = mat2(c, -s, s, c) * discPosition;
 
       vec2 uv = discCenter + discRadius * discPosition;
-      vec4 color = texture2D(skyTexture, uv);
+      vec4 colorA = texture2D(skyTextureA, uv);
+      vec4 colorB = texture2D(skyTextureB, uv);
+      vec4 color = mix(colorA, colorB, textureBlend);
 
       // The PNG is transparent outside its circular footprint. Alpha-aware
       // compositing also prevents dark margin pixels from forming a rim.
@@ -155,58 +157,115 @@ const sphere = new THREE.Mesh(geometry, material);
 scene.add(sphere);
 
 // ------------------------------------------------------------
-// Sky image and hemisphere controls
+// Continuous sky-image blending and hemisphere controls
 // ------------------------------------------------------------
-let currentSkyIndex = 0;
-let textureRequestId = 0;
+const textureCache = new Map([[0, texture]]);
+const textureLoads = new Map();
+let activePair = [0, 0];
+let blendRequestId = 0;
 
-function updateSkyControls() {
-  imageNameEl.textContent = SKY_MAPS[currentSkyIndex].name;
-  imageCountEl.textContent = `${currentSkyIndex + 1} / ${SKY_MAPS.length}`;
+function loadSkyTexture(index) {
+  if (textureCache.has(index)) {
+    return Promise.resolve(textureCache.get(index));
+  }
+  if (textureLoads.has(index)) return textureLoads.get(index);
 
-  const hasMultipleMaps = SKY_MAPS.length > 1;
-  previousImageBtn.disabled = !hasMultipleMaps;
-  nextImageBtn.disabled = !hasMultipleMaps;
-  imageBtn.disabled = !hasMultipleMaps;
+  const promise = new Promise((resolve, reject) => {
+    textureLoader.load(
+      SKY_MAPS[index].file,
+      (loadedTexture) => {
+        configureTexture(loadedTexture);
+        textureCache.set(index, loadedTexture);
+        textureLoads.delete(index);
+        resolve(loadedTexture);
+      },
+      undefined,
+      (error) => {
+        textureLoads.delete(index);
+        reject(error);
+      }
+    );
+  });
+
+  textureLoads.set(index, promise);
+  return promise;
 }
 
-function selectSky(index) {
-  const nextIndex = (index + SKY_MAPS.length) % SKY_MAPS.length;
-  if (nextIndex === currentSkyIndex) return;
+function updateBlendReadout(lowerIndex, upperIndex, fraction) {
+  if (lowerIndex === upperIndex || fraction < 0.0005) {
+    blendReadout.textContent = `${SKY_MAPS[lowerIndex].name} 100%`;
+    return;
+  }
 
-  const requestId = ++textureRequestId;
-  const nextMap = SKY_MAPS[nextIndex];
-  statusEl.textContent = `Loading ${nextMap.name}…`;
+  const lowerPercent = Math.round((1 - fraction) * 100);
+  const upperPercent = 100 - lowerPercent;
+  blendReadout.textContent =
+    `${SKY_MAPS[lowerIndex].name} ${lowerPercent}% · ` +
+    `${SKY_MAPS[upperIndex].name} ${upperPercent}%`;
+}
 
-  textureLoader.load(
-    nextMap.file,
-    (nextTexture) => {
-      if (requestId !== textureRequestId) {
-        nextTexture.dispose();
-        return;
-      }
+function trimTextureCache(lowerIndex, upperIndex) {
+  const keep = new Set([
+    lowerIndex,
+    upperIndex,
+    Math.max(0, lowerIndex - 1),
+    Math.min(SKY_MAPS.length - 1, upperIndex + 1)
+  ]);
 
-      configureTexture(nextTexture);
-      const previousTexture = material.uniforms.skyTexture.value;
-      material.uniforms.skyTexture.value = nextTexture;
-      previousTexture.dispose();
-
-      currentSkyIndex = nextIndex;
-      updateSkyControls();
-      statusEl.textContent = `${nextMap.name} loaded`;
-    },
-    undefined,
-    () => {
-      if (requestId === textureRequestId) {
-        statusEl.textContent = `Could not load ${nextMap.name}`;
-      }
+  for (const [index, cachedTexture] of textureCache) {
+    if (!keep.has(index)) {
+      cachedTexture.dispose();
+      textureCache.delete(index);
     }
-  );
+  }
 }
 
-previousImageBtn.addEventListener("click", () => selectSky(currentSkyIndex - 1));
-nextImageBtn.addEventListener("click", () => selectSky(currentSkyIndex + 1));
-imageBtn.addEventListener("click", () => selectSky(currentSkyIndex + 1));
+async function setSkyBlend(rawValue) {
+  const value = THREE.MathUtils.clamp(Number(rawValue), 0, SKY_MAPS.length - 1);
+  const lowerIndex = Math.floor(value);
+  const upperIndex = Math.min(lowerIndex + 1, SKY_MAPS.length - 1);
+  const fraction = upperIndex === lowerIndex ? 0 : value - lowerIndex;
+  const requestId = ++blendRequestId;
+
+  updateBlendReadout(lowerIndex, upperIndex, fraction);
+
+  if (activePair[0] === lowerIndex && activePair[1] === upperIndex) {
+    material.uniforms.textureBlend.value = fraction;
+    return;
+  }
+
+  statusEl.textContent =
+    `Loading ${SKY_MAPS[lowerIndex].name} / ${SKY_MAPS[upperIndex].name}…`;
+
+  try {
+    const [textureA, textureB] = await Promise.all([
+      loadSkyTexture(lowerIndex),
+      loadSkyTexture(upperIndex)
+    ]);
+    if (requestId !== blendRequestId) return;
+
+    material.uniforms.skyTextureA.value = textureA;
+    material.uniforms.skyTextureB.value = textureB;
+    material.uniforms.textureBlend.value = fraction;
+    activePair = [lowerIndex, upperIndex];
+    statusEl.textContent = "Blend ready";
+
+    trimTextureCache(lowerIndex, upperIndex);
+    const preloadIndex = Math.min(SKY_MAPS.length - 1, upperIndex + 1);
+    loadSkyTexture(preloadIndex).catch(() => {});
+  } catch (error) {
+    console.error(error);
+    if (requestId === blendRequestId) {
+      statusEl.textContent = "Could not load one of the sky images";
+    }
+  }
+}
+
+skySlider.max = String(SKY_MAPS.length - 1);
+skySlider.addEventListener("input", (event) => setSkyBlend(event.target.value));
+
+// Load the first adjacent map in the background so the first blend is smooth.
+loadSkyTexture(1).catch(() => {});
 
 mirrorBtn.addEventListener("click", () => {
   const enabled = !material.uniforms.mirrorFullSky.value;
@@ -216,7 +275,6 @@ mirrorBtn.addEventListener("click", () => {
   statusEl.textContent = enabled ? "Mirrored full sky" : "Original hemisphere";
 });
 
-updateSkyControls();
 
 // ------------------------------------------------------------
 // Manual drag state
@@ -260,23 +318,18 @@ renderer.domElement.addEventListener("pointerup", endPointer);
 renderer.domElement.addEventListener("pointercancel", endPointer);
 
 // ------------------------------------------------------------
-// Device orientation modes
+// Relative device orientation
 //
-// Explore mode treats the initial phone pose as neutral. Real Sky mode uses
-// absolute device orientation, observer location, and UTC to align the fixed
-// Galactic sphere with the physical sky.
-//
-// The sensor quaternion uses the same coordinate conversion historically used
+// The initial phone pose is treated as neutral. The sensor quaternion uses
+// the same coordinate conversion historically used
 // by Three.js DeviceOrientationControls:
 // alpha = device rotation around z
 // beta  = front/back tilt
 // gamma = left/right tilt
 // ------------------------------------------------------------
-let orientationMode = "manual";
+let motionEnabled = false;
 let latestOrientation = null;
 let referenceDeviceQ = null;
-let observerLocation = null;
-let hasAbsoluteOrientation = false;
 
 const zee = new THREE.Vector3(0, 0, 1);
 const euler = new THREE.Euler();
@@ -294,12 +347,7 @@ function getScreenOrientationRad() {
 }
 
 function deviceEventToQuaternion(event) {
-  // iOS exposes its compass heading separately. Other browsers generally put
-  // the absolute Earth-referenced heading in alpha.
-  const alphaDegrees = Number.isFinite(event.webkitCompassHeading)
-    ? 360 - event.webkitCompassHeading
-    : event.alpha;
-  const alpha = alphaDegrees != null ? THREE.MathUtils.degToRad(alphaDegrees) : 0;
+  const alpha = event.alpha != null ? THREE.MathUtils.degToRad(event.alpha) : 0;
   const beta  = event.beta  != null ? THREE.MathUtils.degToRad(event.beta)  : 0;
   const gamma = event.gamma != null ? THREE.MathUtils.degToRad(event.gamma) : 0;
   const orient = getScreenOrientationRad();
@@ -318,59 +366,42 @@ function onDeviceOrientation(event) {
   // Some browsers fire the event but provide null values.
   if (event.alpha == null && event.beta == null && event.gamma == null) return;
 
-  const isAbsolute =
-    event.type === "deviceorientationabsolute" ||
-    event.absolute === true ||
-    Number.isFinite(event.webkitCompassHeading);
-  const firstAbsoluteReading = isAbsolute && !hasAbsoluteOrientation;
-
-  if (orientationMode === "absolute" && !isAbsolute) return;
-
   latestOrientation = event;
-  hasAbsoluteOrientation = hasAbsoluteOrientation || isAbsolute;
 
-  if (orientationMode === "relative" && !referenceDeviceQ) {
+  if (!referenceDeviceQ) {
     referenceDeviceQ = deviceEventToQuaternion(event);
-    statusEl.textContent = "Explore motion enabled";
-  } else if (orientationMode === "absolute" && firstAbsoluteReading) {
-    statusEl.textContent = "Real sky aligned";
+    statusEl.textContent = "Motion enabled";
   }
 }
 
-async function requestOrientationPermission(absolute = false) {
+async function requestOrientationPermission() {
   if (
     typeof DeviceOrientationEvent !== "undefined" &&
     typeof DeviceOrientationEvent.requestPermission === "function"
   ) {
-    // Passing true additionally requests magnetometer access where supported.
-    return DeviceOrientationEvent.requestPermission(absolute);
+    return DeviceOrientationEvent.requestPermission();
   }
   return "granted";
 }
 
 function listenForOrientation() {
   window.addEventListener("deviceorientation", onDeviceOrientation, true);
-  window.addEventListener("deviceorientationabsolute", onDeviceOrientation, true);
-}
-
-function setModeButtons() {
-  exploreBtn.setAttribute("aria-pressed", String(orientationMode === "relative"));
-  realSkyBtn.setAttribute("aria-pressed", String(orientationMode === "absolute"));
 }
 
 async function enableExploreMode() {
   try {
-    const result = await requestOrientationPermission(false);
+    const result = await requestOrientationPermission();
     if (result !== "granted") {
       statusEl.textContent = "Motion denied — drag instead";
       return;
     }
 
-    orientationMode = "relative";
+    motionEnabled = true;
     referenceDeviceQ = null;
     latestOrientation = null;
     listenForOrientation();
-    setModeButtons();
+    exploreBtn.setAttribute("aria-pressed", "true");
+    exploreBtn.textContent = "Motion Enabled";
 
     hintEl.textContent = "Move your phone or drag to fine-tune";
     statusEl.textContent = "Waiting for sensor…";
@@ -380,58 +411,7 @@ async function enableExploreMode() {
   }
 }
 
-function requestObserverLocation() {
-  return new Promise((resolve, reject) => {
-    if (!navigator.geolocation) {
-      reject(new Error("Geolocation is unavailable"));
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(resolve, reject, {
-      enableHighAccuracy: true,
-      timeout: 15000,
-      maximumAge: 300000
-    });
-  });
-}
-
-async function enableRealSkyMode() {
-  statusEl.textContent = "Requesting compass and location…";
-
-  try {
-    // Both permission prompts originate from this button gesture.
-    const [orientationPermission, position] = await Promise.all([
-      requestOrientationPermission(true),
-      requestObserverLocation()
-    ]);
-
-    if (orientationPermission !== "granted") {
-      statusEl.textContent = "Compass denied — use Explore";
-      return;
-    }
-
-    observerLocation = {
-      latitude: THREE.MathUtils.degToRad(position.coords.latitude),
-      longitude: THREE.MathUtils.degToRad(position.coords.longitude),
-      accuracy: position.coords.accuracy
-    };
-    orientationMode = "absolute";
-    latestOrientation = null;
-    hasAbsoluteOrientation = false;
-    listenForOrientation();
-    setModeButtons();
-
-    hintEl.textContent = "Point your phone at the sky or drag to fine-tune";
-    statusEl.textContent = `Waiting for compass · GPS ±${Math.round(position.coords.accuracy)} m`;
-  } catch (err) {
-    console.error(err);
-    statusEl.textContent = "Real sky unavailable — use Explore";
-  }
-}
-
 exploreBtn.addEventListener("click", enableExploreMode);
-realSkyBtn.addEventListener("click", enableRealSkyMode);
-setModeButtons();
 
 // ------------------------------------------------------------
 // Reset
@@ -445,13 +425,7 @@ resetBtn.addEventListener("click", () => {
     referenceDeviceQ = deviceEventToQuaternion(latestOrientation);
   }
 
-  if (orientationMode === "relative") {
-    statusEl.textContent = "Explore view recentered";
-  } else if (orientationMode === "absolute") {
-    statusEl.textContent = "Real-sky fine adjustment reset";
-  } else {
-    statusEl.textContent = "Manual view reset";
-  }
+  statusEl.textContent = motionEnabled ? "View recentered" : "Manual view reset";
 });
 
 // ------------------------------------------------------------
@@ -460,82 +434,13 @@ resetBtn.addEventListener("click", () => {
 const qManual = new THREE.Quaternion();
 const qRelativeDevice = new THREE.Quaternion();
 const qReferenceInverse = new THREE.Quaternion();
-const qHorizonToSky = new THREE.Quaternion();
-const horizonToSkyMatrix = new THREE.Matrix4();
-let lastAstronomyUpdate = 0;
-
-// IAU J2000 equatorial-to-Galactic rotation matrix.
-const EQUATORIAL_TO_GALACTIC = [
-  [-0.0548755604, -0.8734370902, -0.4838350155],
-  [ 0.4941094279, -0.4448296300,  0.7469822445],
-  [-0.8676661490, -0.1980763734,  0.4559837762]
-];
-
-function multiplyMatrix3(a, b) {
-  return a.map((row) => b[0].map((_, column) =>
-    row.reduce((sum, value, index) => sum + value * b[index][column], 0)
-  ));
-}
-
-function updateHorizonToSkyQuaternion(now = new Date()) {
-  if (!observerLocation) return;
-
-  const julianDate = now.getTime() / 86400000 + 2440587.5;
-  const daysSinceJ2000 = julianDate - 2451545.0;
-  const gmstDegrees = 280.46061837 + 360.98564736629 * daysSinceJ2000;
-  const localSiderealTime =
-    THREE.MathUtils.degToRad(((gmstDegrees % 360) + 360) % 360) +
-    observerLocation.longitude;
-
-  const sinL = Math.sin(localSiderealTime);
-  const cosL = Math.cos(localSiderealTime);
-  const sinPhi = Math.sin(observerLocation.latitude);
-  const cosPhi = Math.cos(observerLocation.latitude);
-
-  // Sensor-world coordinates map to local ENU as E=+X, N=-Z, U=+Y.
-  // Columns below are the equatorial vectors for sensor +X, +Y, +Z.
-  const sensorToEquatorial = [
-    [-sinL,  cosPhi * cosL,  sinPhi * cosL],
-    [ cosL,  cosPhi * sinL,  sinPhi * sinL],
-    [ 0,     sinPhi,        -cosPhi]
-  ];
-  const sensorToGalactic = multiplyMatrix3(
-    EQUATORIAL_TO_GALACTIC,
-    sensorToEquatorial
-  );
-
-  // Galactic Cartesian (gx, gy, gz) maps into the fixed sky sphere as
-  // world=(-gx, gz, gy), matching the FITS WCS/readout convention.
-  const sensorToSky = [
-    sensorToGalactic[0].map((value) => -value),
-    sensorToGalactic[2],
-    sensorToGalactic[1]
-  ];
-
-  horizonToSkyMatrix.set(
-    sensorToSky[0][0], sensorToSky[0][1], sensorToSky[0][2], 0,
-    sensorToSky[1][0], sensorToSky[1][1], sensorToSky[1][2], 0,
-    sensorToSky[2][0], sensorToSky[2][1], sensorToSky[2][2], 0,
-    0, 0, 0, 1
-  );
-  qHorizonToSky.setFromRotationMatrix(horizonToSkyMatrix);
-}
 
 function updateCameraQuaternion() {
   // Manual drag offset
   const manualEuler = new THREE.Euler(pitch, yaw, 0, "YXZ");
   qManual.setFromEuler(manualEuler);
 
-  if (orientationMode === "absolute" && latestOrientation && observerLocation) {
-    const now = Date.now();
-    if (now - lastAstronomyUpdate > 1000) {
-      updateHorizonToSkyQuaternion(new Date(now));
-      lastAstronomyUpdate = now;
-    }
-
-    const deviceQ = deviceEventToQuaternion(latestOrientation);
-    camera.quaternion.copy(qHorizonToSky).multiply(deviceQ).multiply(qManual);
-  } else if (orientationMode === "relative" && latestOrientation && referenceDeviceQ) {
+  if (motionEnabled && latestOrientation && referenceDeviceQ) {
     const currentQ = deviceEventToQuaternion(latestOrientation);
 
     // Relative rotation from initial phone pose:

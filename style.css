@@ -70,7 +70,48 @@ canvas {
 
 .image-controls {
   width: min(calc(100vw - 24px), 520px);
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 7px 12px;
+  padding: 11px 14px;
+  border: 1px solid rgba(255,255,255,.25);
+  border-radius: 18px;
+  background: rgba(10,14,28,.66);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.blend-readout {
+  grid-column: 1 / -1;
+  min-height: 1.2em;
+  text-align: center;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#skySlider {
+  grid-column: 1;
+  width: 100%;
+  margin: 0;
+  accent-color: #fff;
+  touch-action: none;
+}
+
+.slider-endpoints {
+  grid-column: 1;
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  opacity: .58;
+}
+
+.image-controls #mirrorBtn {
+  grid-column: 2;
+  grid-row: 2 / 4;
+  align-self: center;
 }
 
 button {
@@ -93,29 +134,8 @@ button:disabled {
   opacity: .38;
 }
 
-#previousImageBtn,
-#nextImageBtn {
-  width: 42px;
-  padding-inline: 0;
-  font-size: 22px;
-  line-height: 1;
-}
-
-#imageBtn {
-  min-width: 128px;
-  display: inline-flex;
-  justify-content: center;
-  gap: 7px;
-}
-
-#imageCount {
-  opacity: .58;
-  font-size: 11px;
-}
-
 #mirrorBtn[aria-pressed="true"],
-#exploreBtn[aria-pressed="true"],
-#realSkyBtn[aria-pressed="true"] {
+#exploreBtn[aria-pressed="true"] {
   border-color: rgba(135, 208, 255, .9);
   background: rgba(39, 107, 153, .8);
 }
@@ -128,10 +148,7 @@ button:disabled {
 
   .image-controls {
     gap: 6px;
-  }
-
-  #imageBtn {
-    min-width: 112px;
+    padding: 10px 11px;
   }
 }
 
