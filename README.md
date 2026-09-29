@@ -5,6 +5,8 @@ A zero-build-step Three.js prototype for an interactive hemispheric sky view.
 ## What it already does
 
 - inverse-projects the supplied circular ZEA hemisphere onto the inside of a sphere;
+- switches among any number of same-geometry ZEA images;
+- optionally mirrors the source hemisphere across its boundary to fill the sky;
 - mouse drag;
 - touch drag;
 - mobile device-orientation control;
@@ -38,6 +40,23 @@ ZEA_FLIP_Y
 Use the rotation and flip settings to match the source image's WCS orientation.
 The PNG alone does not retain FITS/WCS metadata, so known sky features or the
 original FITS header are needed for definitive Galactic-coordinate calibration.
+
+## Add more sky images
+
+Copy each additional PNG into `assets/`, then add it to `SKY_MAPS` near the
+top of `main.js`:
+
+```js
+const SKY_MAPS = [
+  { name: "0.2–2.3 keV", file: "./assets/sky_0.2-2.3.png" },
+  { name: "Map 2", file: "./assets/sky-map-2.png" }
+];
+```
+
+The previous/next controls and image counter derive from this list. All source
+images must have the same ZEA disc centre, radius, orientation, and dimensions.
+The **Mirror Full Sky** control reflects the supplied hemisphere into the
+uncovered half; this is a visual mirror, not additional measured sky data.
 
 ## Run locally
 

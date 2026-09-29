@@ -25,9 +25,20 @@
     <div class="hint" id="hint">Drag to look around</div>
   </div>
 
-  <div id="controls">
-    <button id="motionBtn">Enable Motion</button>
-    <button id="resetBtn">Reset View</button>
+  <div id="controls" aria-label="Sky controls">
+    <div class="control-row image-controls">
+      <button id="previousImageBtn" aria-label="Previous sky image">‹</button>
+      <button id="imageBtn" aria-label="Next sky image">
+        <span id="imageName">0.2–2.3 keV</span>
+        <span id="imageCount">1 / 1</span>
+      </button>
+      <button id="nextImageBtn" aria-label="Next sky image">›</button>
+      <button id="mirrorBtn" aria-pressed="false">Mirror Full Sky</button>
+    </div>
+    <div class="control-row view-controls">
+      <button id="motionBtn">Enable Motion</button>
+      <button id="resetBtn">Reset View</button>
+    </div>
   </div>
 
   <div id="status">Manual view</div>

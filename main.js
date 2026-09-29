@@ -1,6 +1,12 @@
 import * as THREE from "three";
 
 const app = document.getElementById("app");
+const previousImageBtn = document.getElementById("previousImageBtn");
+const imageBtn = document.getElementById("imageBtn");
+const nextImageBtn = document.getElementById("nextImageBtn");
+const imageNameEl = document.getElementById("imageName");
+const imageCountEl = document.getElementById("imageCount");
+const mirrorBtn = document.getElementById("mirrorBtn");
 const motionBtn = document.getElementById("motionBtn");
 const resetBtn = document.getElementById("resetBtn");
 const statusEl = document.getElementById("status");
@@ -31,14 +37,30 @@ app.appendChild(renderer.domElement);
 // ------------------------------------------------------------
 // Inside-out sky sphere
 //
-// sky_0.2-2.3.png is a Zenithal Equal Area (ZEA) image of one
+// Each source image is a Zenithal Equal Area (ZEA) image of one
 // hemisphere, rather than an equirectangular image.  The shader below
 // converts every direction on the sphere back to a point in the ZEA disc.
 // ------------------------------------------------------------
-const texture = new THREE.TextureLoader().load("./assets/sky_0.2-2.3.png");
-texture.colorSpace = THREE.SRGBColorSpace;
-texture.minFilter = THREE.LinearMipmapLinearFilter;
-texture.magFilter = THREE.LinearFilter;
+// Add the other four maps here after copying them into assets/. Buttons and
+// the counter update automatically. All maps must use the same ZEA geometry.
+const SKY_MAPS = [
+  { name: "0.2–2.3 keV", file: "./assets/sky_0.2-2.3.png" }
+  // { name: "Map 2", file: "./assets/sky-map-2.png" },
+  // { name: "Map 3", file: "./assets/sky-map-3.png" },
+  // { name: "Map 4", file: "./assets/sky-map-4.png" },
+  // { name: "Map 5", file: "./assets/sky-map-5.png" }
+];
+
+const textureLoader = new THREE.TextureLoader();
+
+function configureTexture(texture) {
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  return texture;
+}
+
+const texture = configureTexture(textureLoader.load(SKY_MAPS[0].file));
 
 // Projection calibration. The supplied PNG's disc is centred in the image
 // and has a small transparent margin. ROTATION turns the source image about
@@ -58,6 +80,7 @@ const material = new THREE.ShaderMaterial({
     discCenter: { value: ZEA_DISC_CENTER },
     discRadius: { value: ZEA_DISC_RADIUS },
     discRotation: { value: ZEA_ROTATION },
+    mirrorFullSky: { value: false },
     discFlip: {
       value: new THREE.Vector2(ZEA_FLIP_X ? -1 : 1, ZEA_FLIP_Y ? -1 : 1)
     }
@@ -75,6 +98,7 @@ const material = new THREE.ShaderMaterial({
     uniform vec2 discCenter;
     uniform float discRadius;
     uniform float discRotation;
+    uniform bool mirrorFullSky;
     uniform vec2 discFlip;
 
     varying vec3 vSkyDirection;
@@ -86,7 +110,12 @@ const material = new THREE.ShaderMaterial({
       // A hemisphere ends 90 degrees away from that centre.
       float cosTheta = clamp(-direction.z, -1.0, 1.0);
       if (cosTheta < 0.0) {
-        discard;
+        if (mirrorFullSky) {
+          // Reflect the uncovered hemisphere across the ZEA disc boundary.
+          cosTheta = -cosTheta;
+        } else {
+          discard;
+        }
       }
 
       float sinTheta = length(direction.xy);
@@ -117,6 +146,70 @@ const material = new THREE.ShaderMaterial({
 });
 const sphere = new THREE.Mesh(geometry, material);
 scene.add(sphere);
+
+// ------------------------------------------------------------
+// Sky image and hemisphere controls
+// ------------------------------------------------------------
+let currentSkyIndex = 0;
+let textureRequestId = 0;
+
+function updateSkyControls() {
+  imageNameEl.textContent = SKY_MAPS[currentSkyIndex].name;
+  imageCountEl.textContent = `${currentSkyIndex + 1} / ${SKY_MAPS.length}`;
+
+  const hasMultipleMaps = SKY_MAPS.length > 1;
+  previousImageBtn.disabled = !hasMultipleMaps;
+  nextImageBtn.disabled = !hasMultipleMaps;
+  imageBtn.disabled = !hasMultipleMaps;
+}
+
+function selectSky(index) {
+  const nextIndex = (index + SKY_MAPS.length) % SKY_MAPS.length;
+  if (nextIndex === currentSkyIndex) return;
+
+  const requestId = ++textureRequestId;
+  const nextMap = SKY_MAPS[nextIndex];
+  statusEl.textContent = `Loading ${nextMap.name}…`;
+
+  textureLoader.load(
+    nextMap.file,
+    (nextTexture) => {
+      if (requestId !== textureRequestId) {
+        nextTexture.dispose();
+        return;
+      }
+
+      configureTexture(nextTexture);
+      const previousTexture = material.uniforms.skyTexture.value;
+      material.uniforms.skyTexture.value = nextTexture;
+      previousTexture.dispose();
+
+      currentSkyIndex = nextIndex;
+      updateSkyControls();
+      statusEl.textContent = `${nextMap.name} loaded`;
+    },
+    undefined,
+    () => {
+      if (requestId === textureRequestId) {
+        statusEl.textContent = `Could not load ${nextMap.name}`;
+      }
+    }
+  );
+}
+
+previousImageBtn.addEventListener("click", () => selectSky(currentSkyIndex - 1));
+nextImageBtn.addEventListener("click", () => selectSky(currentSkyIndex + 1));
+imageBtn.addEventListener("click", () => selectSky(currentSkyIndex + 1));
+
+mirrorBtn.addEventListener("click", () => {
+  const enabled = !material.uniforms.mirrorFullSky.value;
+  material.uniforms.mirrorFullSky.value = enabled;
+  mirrorBtn.setAttribute("aria-pressed", String(enabled));
+  mirrorBtn.textContent = enabled ? "Half Sky" : "Mirror Full Sky";
+  statusEl.textContent = enabled ? "Mirrored full sky" : "Original hemisphere";
+});
+
+updateSkyControls();
 
 // ------------------------------------------------------------
 // Manual drag state
