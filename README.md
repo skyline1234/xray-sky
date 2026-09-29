@@ -61,8 +61,10 @@ const SKY_MAPS = [
 
 At integer slider positions one map is shown at 100%. Between integers the
 fragment shader samples the two adjacent maps and continuously interpolates
-their opacity. The UI reports both percentages. Only nearby textures are kept
-in the GPU cache to reduce mobile memory use.
+their opacity. Six labeled nodes show the discrete source maps; tapping a node
+jumps to that map, while dragging between nodes creates the overlay. The UI
+reports both percentages. Only nearby textures are kept in the GPU cache to
+reduce mobile memory use.
 
 All source images must have the same ZEA disc centre, radius, orientation, and dimensions.
 The **Mirror Full Sky** control reflects the supplied hemisphere into the
@@ -150,6 +152,10 @@ If permission is denied, drag still works.
 
 Motion mode treats the phone pose at activation as a neutral pose. It controls
 the virtual sky relatively and does not claim to match the physical sky.
+
+The camera is at the exact centre of the celestial sphere, so doubling the
+sphere radius does not change its apparent size. `CAMERA_FOV` in `main.js`
+controls how much sky is visible instead; it is currently set to 85 degrees.
 
 ## Important next step
 

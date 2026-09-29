@@ -3,6 +3,7 @@ import * as THREE from "three";
 const app = document.getElementById("app");
 const skySlider = document.getElementById("skySlider");
 const blendReadout = document.getElementById("blendReadout");
+const sliderNodes = [...document.querySelectorAll(".slider-node")];
 const mirrorBtn = document.getElementById("mirrorBtn");
 const exploreBtn = document.getElementById("exploreBtn");
 const resetBtn = document.getElementById("resetBtn");
@@ -15,8 +16,12 @@ const coordinatesEl = document.getElementById("coordinates");
 // ------------------------------------------------------------
 const scene = new THREE.Scene();
 
+// A wider field of view shows more of the celestial sphere at once. Changing
+// the sphere radius itself would have no visual effect because the observer is
+// exactly at its centre.
+const CAMERA_FOV = 85;
 const camera = new THREE.PerspectiveCamera(
-  70,
+  CAMERA_FOV,
   window.innerWidth / window.innerHeight,
   0.1,
   100
@@ -192,6 +197,12 @@ function loadSkyTexture(index) {
 }
 
 function updateBlendReadout(lowerIndex, upperIndex, fraction) {
+  const sliderPosition = lowerIndex + fraction;
+  for (const node of sliderNodes) {
+    const nodePosition = Number(node.dataset.value);
+    node.classList.toggle("is-active", Math.abs(sliderPosition - nodePosition) < 0.001);
+  }
+
   if (lowerIndex === upperIndex || fraction < 0.0005) {
     blendReadout.textContent = `${SKY_MAPS[lowerIndex].name} 100%`;
     return;
@@ -263,6 +274,12 @@ async function setSkyBlend(rawValue) {
 
 skySlider.max = String(SKY_MAPS.length - 1);
 skySlider.addEventListener("input", (event) => setSkyBlend(event.target.value));
+for (const node of sliderNodes) {
+  node.addEventListener("click", () => {
+    skySlider.value = node.dataset.value;
+    setSkyBlend(node.dataset.value);
+  });
+}
 
 // Load the first adjacent map in the background so the first blend is smooth.
 loadSkyTexture(1).catch(() => {});
