@@ -1,5 +1,30 @@
 # Minimal interactive X-ray Sky
 
+## Gaia optical layer (Hammer)
+
+The Optical slider node now uses
+`assets/The_colour_of_the_sky_from_Gaia_s_Early_Data_Release_3.png`
+(2000 x 1000). The original image is preserved. Its `projection: 1` configuration
+selects Hammer sampling, centred on Galactic longitude 0 degrees, with north
+up and longitude increasing to the left. Unspecified projection defaults to
+the existing ZEA hemisphere sampling for X-ray maps.
+
+Both textures are sampled at the same Galactic direction before blending.
+For example, l=0, b=0 maps to the Gaia image centre and to the left boundary
+of the X-ray disc; l=270, b=0 maps to the right half of Gaia and the X-ray
+disc centre. Identical image dimensions are no longer required across these
+two projection types. ZEA layers still need the shared WCS calibration below.
+
+Gaia always displays its true all-sky coverage. The mirror switch affects only
+ZEA layers; their reflected half is synthetic and cannot be used for physical
+cross-band comparisons. With mirroring off, missing X-ray coverage fades to
+black during a crossfade, while the optical layer retains its weighted signal.
+
+Source: [ESA Gaia EDR3 colour sky](https://www.esa.int/ESA_Multimedia/Images/2020/12/The_colour_of_the_sky_from_Gaia_s_Early_Data_Release_3).
+The mapping has been reviewed statically; on-device rendering and source-level
+alignment still require visual verification, including the X-ray PNG export
+orientation discussed below.
+
 A zero-build-step Three.js prototype for an interactive hemispheric sky view.
 
 The CSS and JavaScript references in `index.html` include a small version query
@@ -53,13 +78,15 @@ The slider order is defined by `SKY_MAPS` near the top of `main.js`:
 
 ```js
 const SKY_MAPS = [
-  { name: "Optical", file: "./assets/optical.png" },
-  // ...the four single-band maps...
-  { name: "RGB composite", file: "./assets/RGB_0.20.25_0.2_2.3_0.60.7.png" }
+  { name: "RGB composite", file: "./assets/RGB_0.20.25_0.2_2.3_0.60.7.png" },
+  { name: "Optical (Gaia DR3)", file: "./assets/The_colour_of_the_sky_from_Gaia_s_Early_Data_Release_3.png", projection: 1 },
+  // ...the four single-band maps, in red, green, purple, blue order...
 ];
 ```
 
 At integer slider positions one map is shown at 100%. Between integers the
+slider blends adjacent maps. The initial position is RGB X-ray at 100%, followed
+by Gaia optical at the second node. Between integers the
 fragment shader samples the two adjacent maps and continuously interpolates
 their opacity. Six labeled nodes show the discrete source maps; tapping a node
 jumps to that map, while dragging between nodes creates the overlay. The UI
@@ -158,7 +185,9 @@ and time it does not claim to match the real sky.
 
 The camera is at the exact centre of the celestial sphere, so doubling the
 sphere radius does not change its apparent size. `CAMERA_FOV` in `main.js`
-controls how much sky is visible instead; it is currently set to 85 degrees.
+controls how much sky is visible instead. `CAMERA_VIEW_SCALE = 1.5` widens
+the previous 85-degree view using `2 * atan(1.5 * tan(85 degrees / 2))`,
+making projected features two-thirds their previous size at the same direction.
 
 ## Important next step
 

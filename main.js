@@ -20,7 +20,11 @@ const scene = new THREE.Scene();
 // A wider field of view shows more of the celestial sphere at once. Changing
 // the sphere radius itself would have no visual effect because the observer is
 // exactly at its centre.
-const CAMERA_FOV = 85;
+// Reduce projected feature size to 1/1.5 of the previous 85-degree view.
+const CAMERA_VIEW_SCALE = 1.5;
+const CAMERA_FOV = THREE.MathUtils.radToDeg(
+  2 * Math.atan(CAMERA_VIEW_SCALE * Math.tan(THREE.MathUtils.degToRad(85) / 2))
+);
 const camera = new THREE.PerspectiveCamera(
   CAMERA_FOV,
   window.innerWidth / window.innerHeight,
@@ -45,13 +49,13 @@ app.appendChild(renderer.domElement);
 // ------------------------------------------------------------
 // Projection codes: 0 = Galactic ZEA hemisphere, 1 = Galactic Hammer all sky.
 const SKY_MAPS = [
+  { name: "RGB composite", file: "./assets/RGB_0.20.25_0.2_2.3_0.60.7.png" },
   { name: "Optical (Gaia DR3)", file: "./assets/The_colour_of_the_sky_from_Gaia_s_Early_Data_Release_3.png", projection: 1,
     credit: "ESA/Gaia/DPAC, CC BY-SA 3.0 IGO, adapted" },
   { name: "0.2–0.25 keV · Red", file: "./assets/rate_0.2_0.25_s_red_asinh.png" },
   { name: "0.2–2.3 keV · Green", file: "./assets/rate_0.2_2.3_s_green_asinh.png" },
   { name: "0.5–0.6 keV · Purple", file: "./assets/rate_0.5_0.6_s_purple_asinh.png" },
-  { name: "0.6–0.7 keV · Blue", file: "./assets/rate_0.6_0.7_s_blue_asinh.png" },
-  { name: "RGB composite", file: "./assets/RGB_0.20.25_0.2_2.3_0.60.7.png" }
+  { name: "0.6–0.7 keV · Blue", file: "./assets/rate_0.6_0.7_s_blue_asinh.png" }
 ];
 
 const textureLoader = new THREE.TextureLoader();
