@@ -3,6 +3,7 @@ import * as THREE from "three";
 const app = document.getElementById("app");
 const skySlider = document.getElementById("skySlider");
 const blendReadout = document.getElementById("blendReadout");
+const imageCredit = document.getElementById("imageCredit");
 const sliderNodes = [...document.querySelectorAll(".slider-node")];
 const mirrorBtn = document.getElementById("mirrorBtn");
 const exploreBtn = document.getElementById("exploreBtn");
@@ -40,13 +41,12 @@ app.appendChild(renderer.domElement);
 // ------------------------------------------------------------
 // Inside-out sky sphere
 //
-// Each source image is a Zenithal Equal Area (ZEA) image of one
-// hemisphere, rather than an equirectangular image.  The shader below
-// converts every direction on the sphere back to a point in the ZEA disc.
+// Each layer is sampled in its own projection at the same Galactic direction.
 // ------------------------------------------------------------
-// Slider order. All maps use the same 2160 x 2160 Galactic ZEA geometry.
+// Projection codes: 0 = Galactic ZEA hemisphere, 1 = Galactic Hammer all sky.
 const SKY_MAPS = [
-  { name: "Optical", file: "./assets/optical.png" },
+  { name: "Optical (Gaia DR3)", file: "./assets/The_colour_of_the_sky_from_Gaia_s_Early_Data_Release_3.png", projection: 1,
+    credit: "ESA/Gaia/DPAC, CC BY-SA 3.0 IGO, adapted" },
   { name: "0.2–0.25 keV · Red", file: "./assets/rate_0.2_0.25_s_red_asinh.png" },
   { name: "0.2–2.3 keV · Green", file: "./assets/rate_0.2_2.3_s_green_asinh.png" },
   { name: "0.5–0.6 keV · Purple", file: "./assets/rate_0.5_0.6_s_purple_asinh.png" },
@@ -87,6 +87,8 @@ const material = new THREE.ShaderMaterial({
     skyTextureA: { value: texture },
     skyTextureB: { value: texture },
     textureBlend: { value: 0 },
+    projectionA: { value: SKY_MAPS[0].projection ?? 0 },
+    projectionB: { value: SKY_MAPS[0].projection ?? 0 },
     discCenter: { value: ZEA_DISC_CENTER },
     discRadius: { value: ZEA_DISC_RADIUS },
     discRotation: { value: ZEA_ROTATION },
@@ -107,6 +109,8 @@ const material = new THREE.ShaderMaterial({
     uniform sampler2D skyTextureA;
     uniform sampler2D skyTextureB;
     uniform float textureBlend;
+    uniform int projectionA;
+    uniform int projectionB;
     uniform vec2 discCenter;
     uniform float discRadius;
     uniform float discRotation;
@@ -115,8 +119,23 @@ const material = new THREE.ShaderMaterial({
 
     varying vec3 vSkyDirection;
 
-    void main() {
-      vec3 direction = normalize(vSkyDirection);
+    vec4 sampleSky(sampler2D skyMap, int projection, vec3 direction) {
+      if (projection == 1) {
+        // Same Galactic frame as the coordinate readout:
+        // (gx, gy, gz) = (-world.x, world.z, world.y).
+        // Hammer centred on l=0; north up and longitude increases LEFT.
+        float longitude = length(direction.xz) > 0.000001
+          ? atan(direction.z, -direction.x) : 0.0;
+        float sinLatitude = clamp(direction.y, -1.0, 1.0);
+        float cosLatitude = sqrt(max(0.0, 1.0 - sinLatitude * sinLatitude));
+        float denominator = sqrt(1.0 + cosLatitude * cos(0.5 * longitude));
+        vec2 hammer = vec2(
+          -cosLatitude * sin(0.5 * longitude), sinLatitude
+        ) / denominator;
+        // Full ellipse touches all four edges of the supplied 2000x1000 PNG.
+        vec2 uv = 0.5 + 0.5 * hammer;
+        return texture2D(skyMap, uv);
+      }
 
       // The ZEA disc is centred on the initial view direction (0, 0, -1).
       // A hemisphere ends 90 degrees away from that centre.
@@ -126,7 +145,7 @@ const material = new THREE.ShaderMaterial({
           // Reflect the uncovered hemisphere across the ZEA disc boundary.
           cosTheta = -cosTheta;
         } else {
-          discard;
+          return vec4(0.0);
         }
       }
 
@@ -145,9 +164,17 @@ const material = new THREE.ShaderMaterial({
       discPosition = mat2(c, -s, s, c) * discPosition;
 
       vec2 uv = discCenter + discRadius * discPosition;
-      vec4 colorA = texture2D(skyTextureA, uv);
-      vec4 colorB = texture2D(skyTextureB, uv);
-      vec4 color = mix(colorA, colorB, textureBlend);
+      return texture2D(skyMap, uv);
+    }
+
+    void main() {
+      vec3 direction = normalize(vSkyDirection);
+      vec4 colorA = sampleSky(skyTextureA, projectionA, direction);
+      vec4 colorB = sampleSky(skyTextureB, projectionB, direction);
+      // Blend coverage against black: missing X-ray coverage fades out rather
+      // than incorrectly cutting away the full-sky Gaia layer.
+      vec4 color = mix(vec4(colorA.rgb * colorA.a, colorA.a),
+                       vec4(colorB.rgb * colorB.a, colorB.a), textureBlend);
 
       // The PNG is transparent outside its circular footprint. Alpha-aware
       // compositing also prevents dark margin pixels from forming a rim.
@@ -215,6 +242,13 @@ function updateBlendReadout(lowerIndex, upperIndex, fraction) {
     `${SKY_MAPS[upperIndex].name} ${upperPercent}%`;
 }
 
+function updateImageCredit(lowerIndex, upperIndex, fraction) {
+  const credits = new Set();
+  if (fraction < 1) credits.add(SKY_MAPS[lowerIndex].credit ?? "MPE/eROSITA_DE");
+  if (fraction > 0) credits.add(SKY_MAPS[upperIndex].credit ?? "MPE/eROSITA_DE");
+  imageCredit.textContent = [...credits].map((credit) => `Credit: ${credit}`).join("\n");
+}
+
 function trimTextureCache(lowerIndex, upperIndex) {
   const keep = new Set([
     lowerIndex,
@@ -242,6 +276,7 @@ async function setSkyBlend(rawValue) {
 
   if (activePair[0] === lowerIndex && activePair[1] === upperIndex) {
     material.uniforms.textureBlend.value = fraction;
+    updateImageCredit(lowerIndex, upperIndex, fraction);
     return;
   }
 
@@ -257,8 +292,11 @@ async function setSkyBlend(rawValue) {
 
     material.uniforms.skyTextureA.value = textureA;
     material.uniforms.skyTextureB.value = textureB;
+    material.uniforms.projectionA.value = SKY_MAPS[lowerIndex].projection ?? 0;
+    material.uniforms.projectionB.value = SKY_MAPS[upperIndex].projection ?? 0;
     material.uniforms.textureBlend.value = fraction;
     activePair = [lowerIndex, upperIndex];
+    updateImageCredit(lowerIndex, upperIndex, fraction);
     statusEl.textContent = "Blend ready";
 
     trimTextureCache(lowerIndex, upperIndex);

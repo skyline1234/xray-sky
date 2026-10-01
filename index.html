@@ -6,7 +6,7 @@
         content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
   <meta name="theme-color" content="#050812" />
   <title>X-ray Sky</title>
-  <link rel="stylesheet" href="./style.css?v=20260929-7" />
+  <link rel="stylesheet" href="./style.css?v=20261001-2" />
 
   <!-- No build step: Three.js is loaded directly from a CDN. -->
   <script type="importmap">
@@ -28,12 +28,12 @@
 
   <div id="controls" aria-label="Sky controls">
     <div class="control-row image-controls">
-      <div class="blend-readout" id="blendReadout">Optical 100%</div>
+      <div class="blend-readout" id="blendReadout">Optical (Gaia DR3) 100%</div>
       <input id="skySlider" type="range" min="0" max="5" step="0.001" value="0"
              aria-label="Blend between sky images" />
       <div class="slider-nodes" aria-label="Sky image energy bands">
-        <button class="slider-node is-active" data-value="0" aria-label="Show Optical">
-          <span class="node-dot"></span><span>Optical</span>
+        <button class="slider-node is-active" data-value="0" aria-label="Show Optical (Gaia DR3)">
+          <span class="node-dot"></span><span>Optical<br>(Gaia DR3)</span>
         </button>
         <button class="slider-node" data-value="1" aria-label="Show 0.2 to 0.25 keV">
           <span class="node-dot"></span><span>0.2–0.25</span>
@@ -57,10 +57,11 @@
       <button id="exploreBtn" aria-pressed="false">Enable Motion</button>
       <button id="resetBtn">Reset View</button>
     </div>
+    <div id="imageCredit">Credit: ESA/Gaia/DPAC, CC BY-SA 3.0 IGO, adapted</div>
   </div>
 
   <div id="status">Manual view</div>
 
-  <script type="module" src="./main.js?v=20260929-7"></script>
+  <script type="module" src="./main.js?v=20261001-2"></script>
 </body>
 </html>
